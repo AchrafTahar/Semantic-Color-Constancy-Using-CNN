@@ -1,0 +1,27 @@
+name: semantic_color_constancy_using_cnn
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.12
+  - black                    # Code formatter
+  - flake8                   # Linter for checking the style guide enforcement
+  - isort                    # Sorts imports alphabetically
+  - pip                      # Package manager
+  - typer                    # For creating command-line interfaces
+  - loguru                   # For logging
+  - tqdm                     # Progress bar library
+  - ipython                  # Interactive Python shell
+  - jupyterlab               # Jupyter notebook interface
+  - matplotlib               # For plotting and visualization
+  - notebook                 # Jupyter notebook support
+  - numpy                    # Fundamental package for scientific computing
+  - pandas                   # Data manipulation and analysis
+  - scikit-learn             # Machine learning library
+  - pytorch=2.4.1            # Specify PyTorch version
+  - torchvision=0.19.1       # Correct version for torchvision
+  - cudatoolkit=11.8         # Specify CUDA version (e.g., 11.8 or 12.0)
+  - pip:
+      - python-dotenv        # For loading environment variables from a .env file
+      - mkdocs                # Documentation generator
+      - -e .                  # Install the current package in editable mode
