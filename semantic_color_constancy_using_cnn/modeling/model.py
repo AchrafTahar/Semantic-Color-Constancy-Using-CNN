@@ -1,83 +1,67 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class TrueColorNet(nn.Module):
-    def __init__(self, num_classes=1000):
+    def __init__(self):
         super(TrueColorNet, self).__init__()
         
-        # Feature extractor - convolutional layers
-        self.features = nn.Sequential(
-            # Conv1
-            nn.Conv2d(4, 96, kernel_size=11, stride=4, padding=0),
-            nn.ReLU(inplace=True),
-            nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            
-            # Conv2
-            nn.Conv2d(96, 256, kernel_size=5, stride=1, padding=2),
-            nn.ReLU(inplace=True),
-            nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            
-            # Conv3
-            nn.Conv2d(256, 384, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            
-            # Conv4
-            nn.Conv2d(384, 384, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            
-            # Conv5
-            nn.Conv2d(384, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-        )
+        # Conv layers
+        self.conv1 = nn.Conv2d(4, 96, kernel_size=11, stride=4, padding=0)
+        self.conv2 = nn.Conv2d(96, 256, kernel_size=5, stride=1, padding=2)
+        self.conv3 = nn.Conv2d(256, 384, kernel_size=3, stride=1, padding=1)
+        self.conv4 = nn.Conv2d(384, 384, kernel_size=3, stride=1, padding=1)
+        self.conv5 = nn.Conv2d(384, 256, kernel_size=3, stride=1, padding=1)
         
-        # Classifier - fully connected layers
-        self.classifier = nn.Sequential(
-            nn.Dropout(p=0.5),
-            nn.Linear(256 * 6 * 6, 4096),
-            nn.ReLU(inplace=True),
-            
-            nn.Dropout(p=0.5),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-            
-            nn.Linear(4096, num_classes),
-        )
+        # Fully connected layers
+        self.fc6 = nn.Linear(256 * 6 * 6, 4096)
+        self.fc7 = nn.Linear(4096, 2048)
+        self.fc8 = nn.Linear(2048, 1024)
+        self.fc9 = nn.Linear(1024, 4)  # r, g, b, gamma
         
-        # Initialize weights
-        self._initialize_weights()
-    
+        # Dropout
+        self.dropout = nn.Dropout(0.5)
+        
+        # Normalization layers
+        self.norm = nn.LocalResponseNorm(5, alpha=1e-4, beta=0.75, k=2.0)
+        
     def forward(self, x):
-        x = self.features(x)
-        x = torch.flatten(x, 1)  # Flatten dimensions except batch
-        x = self.classifier(x)
+        # Conv1
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.norm(x)
+        x = F.max_pool2d(x, kernel_size=3, stride=2)
+        
+        # Conv2
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = self.norm(x)
+        x = F.max_pool2d(x, kernel_size=3, stride=2)
+        
+        # Conv3-5
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = F.relu(self.conv5(x))
+        x = F.max_pool2d(x, kernel_size=3, stride=2)
+        
+        # Flatten
+        x = x.view(x.size(0), -1)
+        
+        # Fully connected with ReLU and dropout
+        x = F.relu(self.fc6(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc7(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc8(x))
+        x = self.dropout(x)
+        x = self.fc9(x)
+        
         return x
-    
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.normal_(m.weight, mean=0, std=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.01)
-                nn.init.constant_(m.bias, 0)
-
-# Example usage
-def main():
-    # Create model instance
-    model = TrueColorNet(num_classes=1000)
-    
-    # Create a sample input tensor
-    batch_size = 1
-    input_tensor = torch.randn(batch_size, 3, 227, 227)
-    
-    # Forward pass
-    output = model(input_tensor)
-    
-    print(f"Input shape: {input_tensor.shape}")
-    print(f"Output shape: {output.shape}")
 
 if __name__ == "__main__":
-    main()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Check if GPU is available
+    print("Testing TrueColorNet...")
+    x = torch.randn()
+    model = TrueColorNet()
+    y = model(x)
+    print(y.detach().shape)
