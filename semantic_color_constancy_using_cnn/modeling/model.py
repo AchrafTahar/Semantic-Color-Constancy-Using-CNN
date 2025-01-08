@@ -58,10 +58,3 @@ class TrueColorNet(nn.Module):
         
         return x
 
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Check if GPU is available
-    print("Testing TrueColorNet...")
-    x = torch.randn()
-    model = TrueColorNet()
-    y = model(x)
-    print(y.detach().shape)
