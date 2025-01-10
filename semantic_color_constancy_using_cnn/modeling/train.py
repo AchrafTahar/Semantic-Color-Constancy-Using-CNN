@@ -9,7 +9,7 @@ import numpy as np
 import typer
 from loguru import logger
 from tqdm import tqdm
-from semantic_color_constancy_using_cnn.config import MODELS_DIR, PROCESSED_DATA_DIR
+from semantic_color_constancy_using_cnn.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
 
 app = typer.Typer()
 
@@ -129,8 +129,31 @@ def main(
     logger.info("Starting model training...")
     try:
         # Load your data here (not implemented in this snippet)
-        train_loader = None  # Replace with actual DataLoader
-        val_loader = None  # Replace with actual DataLoader
+        train_dataset = ADE20KTrueColorNetDataset(
+        root_dir_img='RAW_DATA_DIR_IMG/training',
+        root_dir_mask='RAW_DATA_DIR_MASK/training',
+        transform=transform,
+        train=True
+        )
+        val_dataset = ADE20KTrueColorNetDataset(
+        root_dir_img='RAW_DATA_DIR_IMG/validation',
+        root_dir_mask='RAW_DATA_DIR_MASK/training',
+        transform=transform,
+        train=False
+        )
+        # Create dataloaders
+        train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4
+        )
+        val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4
+        )
         train(train_loader, val_loader)
         logger.success("Model training completed successfully.")
     except Exception as e:

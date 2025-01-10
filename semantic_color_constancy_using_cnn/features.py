@@ -1,47 +1,140 @@
 from pathlib import Path
-
+import os
+import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
+from PIL import Image
 import typer
 from loguru import logger
 from tqdm import tqdm
 
-from semantic_color_constancy_using_cnn.config import PROCESSED_DATA_DIR
+from semantic_color_constancy_using_cnn.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
 
 app = typer.Typer()
-def correct_white_balance(image, params):
-    """
-    Apply white balance correction using predicted parameters
-    Args:
-        image: Input image tensor (B, 3, H, W)
-        params: Predicted parameters tensor (B, 4) [r, g, b, gamma]
-    """
-    r, g, b, gamma = params[:, 0:1], params[:, 1:2], params[:, 2:3], params[:, 3:4]
-    
-    # Create correction matrix
-    correction = torch.stack([1/r, 1/g, 1/b], dim=1)
-    correction = correction.view(-1, 3, 1, 1)
-    
-    # Apply color correction
-    corrected = image * correction
-    
-    # Apply gamma correction
-    corrected = torch.pow(corrected, 1/gamma.view(-1, 1, 1, 1))
-    
-    return corrected
+
+# Configure logger to output to a file and console
+logger.add("dataset_processing.log", format="{time} {level} {message}", level="DEBUG")
+
+
+class ADE20KTrueColorNetDataset(Dataset):
+    def __init__(self, root_dir_img: str, self, root_dir_mask: str, transform=None, train: bool = True):
+        """
+        Args:
+            root_dir_img: Path to ADE20K dataset/images
+            root_dir_img: Path to ADE20K dataset/annotations
+            transform: Optional transform to be applied
+            train: If True, creates synthetic data for training
+        """
+        logger.info(f"Initializing ADE20K dataset from {root_dir}...")
+        self.root_dir = root_dir
+        self.transform = transform
+        self.train = train
+
+        try:
+            self.images_dir = os.path.join(root_dir_img, 'images')
+            self.masks_dir = os.path.join(root_dir_mask, 'annotations')
+            self.image_files = sorted(os.listdir(self.images_dir))
+            
+            if not self.image_files:
+                raise ValueError("No image files found in the dataset directory.")
+            
+            self.augmentations_per_image = 769 if train else 1
+            logger.success(f"Dataset initialized successfully with {len(self.image_files)} images.")
+        except Exception as e:
+            logger.exception(f"Error initializing dataset: {e}")
+            raise
+
+    def __len__(self):
+        return len(self.image_files) * self.augmentations_per_image
+
+    def apply_wrong_white_balance(self, image: Image.Image):
+        """Apply random white balance and gamma correction."""
+        logger.debug("Applying random white balance and gamma correction.")
+        img_array = np.array(image).astype(np.float32) / 255.0
+
+        # Random RGB multipliers [0.7, 1.3]
+        r, g, b = np.random.uniform(0.7, 1.3, 3)
+
+        # Random gamma [0.85, 1.15]
+        gamma = np.random.uniform(0.85, 1.15)
+
+        # Apply color and gamma correction
+        img_array[..., 0] *= r
+        img_array[..., 1] *= g
+        img_array[..., 2] *= b
+        img_array = np.power(img_array, gamma)
+        img_array = np.clip(img_array * 255, 0, 255).astype(np.uint8)
+
+        logger.debug("White balance correction applied.")
+        return Image.fromarray(img_array), torch.tensor([r, g, b, gamma])
+
+    def __getitem__(self, idx: int):
+        """Retrieve a single dataset item."""
+        img_idx = idx // self.augmentations_per_image
+        aug_idx = idx % self.augmentations_per_image
+
+        img_name = self.image_files[img_idx]
+        img_path = os.path.join(self.images_dir, img_name)
+        mask_path = os.path.join(self.masks_dir, img_name.replace('.jpg', '.png'))
+
+        logger.debug(f"Loading image: {img_path}")
+        image = Image.open(img_path).convert('RGB')
+        mask = Image.open(mask_path)
+
+        if self.train and aug_idx > 0:
+            image, params = self.apply_wrong_white_balance(image)
+        else:
+            params = torch.tensor([1.0, 1.0, 1.0, 1.0])
+
+        if self.transform:
+            image = self.transform(image)
+            mask = self.transform(mask)
+
+        # Combine image and mask
+        x = torch.cat([image, mask], dim=0)
+
+        logger.debug(f"Returning augmented image and parameters for index {idx}.")
+        return x, params
+
 
 @app.command()
 def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    # -----------------------------------------
+    root_dir_img: Path = typer.Argument(RAW_DATA_DIR_IMG/training, help="Path to the ADE20K dataset root directory."),
+    root_dir_mask: Path = typer.Argument(RAW_DATA_DIR_MASK/training, help="Path to the ADE20K dataset root directory."),
+    batch_size: int = typer.Option(32, help="Batch size for data loading."),
 ):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Generating features from dataset...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Features generation complete.")
-    # -----------------------------------------
+    """CLI tool to process the ADE20K dataset and generate features."""
+    logger.info("Starting dataset processing...")
+
+    try:
+        # Define image transformations
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
+
+        # Initialize dataset
+        dataset = ADE20KTrueColorNetDataset(
+            root_dir_img=root_dir_img,
+            root_dir_mask=root_dir_mask,
+            transform=transform,
+            train=True
+        )
+
+        # Initialize dataloader
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        # Process dataset
+        logger.info("Processing dataset...")
+        for i, (inputs, targets) in enumerate(tqdm(dataloader, desc="Processing batches")):
+            logger.debug(f"Batch {i + 1}: Inputs shape = {inputs.shape}, Targets shape = {targets.shape}")
+            # Add your feature generation code here (if needed)
+
+        logger.success("Dataset processing completed successfully.")
+    except Exception as e:
+        logger.exception("An error occurred during dataset processing.")
+        raise
 
 
 if __name__ == "__main__":
