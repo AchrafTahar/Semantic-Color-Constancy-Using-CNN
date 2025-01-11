@@ -3,7 +3,7 @@
 #################################################################################
 
 PROJECT_NAME = semantic_color_constancy_using_cnn
-PYTHON_VERSION = 3.12
+PYTHON_VERSION = 3.10
 PYTHON_INTERPRETER = python
 
 #################################################################################
@@ -15,9 +15,6 @@ PYTHON_INTERPRETER = python
 .PHONY: requirements
 requirements:
 	conda env update --name $(PROJECT_NAME) --file environment.yml --prune
-	
-
-
 
 ## Delete all compiled Python files
 .PHONY: clean
@@ -37,23 +34,31 @@ lint:
 format:
 	black --config pyproject.toml semantic_color_constancy_using_cnn
 
-
-
-
 ## Set up python interpreter environment
 .PHONY: create_environment
 create_environment:
 	conda env create --name $(PROJECT_NAME) -f environment.yml
-	
 	@echo ">>> conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
-	
 
+## Run the model script
+.PHONY: run_model
+run_model:
+	$(PYTHON_INTERPRETER) semantic_color_constancy_using_cnn/modeling/model.py
 
+## Train the model
+.PHONY: train
+train:
+	$(PYTHON_INTERPRETER) semantic_color_constancy_using_cnn/modeling/train.py
 
-#################################################################################
-# PROJECT RULES                                                                 #
-#################################################################################
+## Run tests
+.PHONY: test
+test:
+	pytest tests/
 
+## Serve documentation locally
+.PHONY: docs
+docs:
+	mkdocs serve
 
 ## Make Dataset
 .PHONY: data

@@ -4,62 +4,75 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from loguru import logger
 from tqdm import tqdm
-
+import torch.nn.functional as F
 # Import the model
 class TrueColorNet(nn.Module):
     def __init__(self):
         super(TrueColorNet, self).__init__()
-        
-        # Conv layers
-        self.conv1 = nn.Conv2d(4, 96, kernel_size=11, stride=4, padding=0)
-        self.conv2 = nn.Conv2d(96, 256, kernel_size=5, stride=1, padding=2)
-        self.conv3 = nn.Conv2d(256, 384, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(384, 384, kernel_size=3, stride=1, padding=1)
-        self.conv5 = nn.Conv2d(384, 256, kernel_size=3, stride=1, padding=1)
-        
-        # Fully connected layers
-        self.fc6 = nn.Linear(256 * 6 * 6, 4096)
+
+        # Conv1: 96 11x11x4 convolutions with stride [4 4] and padding [0 0]
+        self.conv1 = nn.Conv2d(in_channels=4, out_channels=96, kernel_size=11, stride=4, padding=0)
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2)
+
+        # Conv2: 256 5x5x48 convolutions
+        self.conv2 = nn.Conv2d(in_channels=48, out_channels=256, kernel_size=5, padding=2)
+
+        # Conv3: 384 3x3x256 convolutions
+        self.conv3 = nn.Conv2d(in_channels=256, out_channels=384, kernel_size=3, padding=1)
+
+        # Conv4: 384 3x3x384 convolutions
+        self.conv4 = nn.Conv2d(in_channels=384, out_channels=384, kernel_size=3, padding=1)
+
+        # Channel reduction: 384 -> 192
+        self.reduce_channels = nn.Conv2d(in_channels=384, out_channels=192, kernel_size=1)
+
+        # Conv5: 256 3x3x192 convolutions
+        self.conv5 = nn.Conv2d(in_channels=192, out_channels=256, kernel_size=3, padding=1)
+
+        # Fully Connected Layers
+        self.fc6 = nn.Linear(256 * 26 * 26, 4096)
+        self.dropout1 = nn.Dropout(0.5)
         self.fc7 = nn.Linear(4096, 2048)
+        self.dropout2 = nn.Dropout(0.5)
         self.fc8 = nn.Linear(2048, 1024)
-        self.fc9 = nn.Linear(1024, 4)  # r, g, b, gamma
-        
-        # Dropout
-        self.dropout = nn.Dropout(0.5)
-        
-        # Normalization layers
-        self.norm = nn.LocalResponseNorm(5, alpha=1e-4, beta=0.75, k=2.0)
-        
+        self.dropout3 = nn.Dropout(0.5)
+        self.fc9 = nn.Linear(1024, 4)  # Output 4 parameters for color correction
+
     def forward(self, x):
         # Conv1
-        x = self.conv1(x)
-        x = torch.relu(x)
-        x = self.norm(x)
-        x = torch.max_pool2d(x, kernel_size=3, stride=2)
-        
+        x = F.relu(self.conv1(x))  # Output shape: (batch_size, 96, H', W')
+        x = self.pool1(x)  # Output shape: (batch_size, 96, H'', W'')
+
+        # Reduce channels from 96 to 48 for Conv2
+        x = x[:, :48, :, :]  # Manually slice to 48 channels
+
         # Conv2
-        x = self.conv2(x)
-        x = torch.relu(x)
-        x = self.norm(x)
-        x = torch.max_pool2d(x, kernel_size=3, stride=2)
-        
-        # Conv3-5
-        x = torch.relu(self.conv3(x))
-        x = torch.relu(self.conv4(x))
-        x = torch.relu(self.conv5(x))
-        x = torch.max_pool2d(x, kernel_size=3, stride=2)
-        
-        # Flatten
-        x = x.view(x.size(0), -1)
-        
-        # Fully connected with ReLU and dropout
-        x = torch.relu(self.fc6(x))
-        x = self.dropout(x)
-        x = torch.relu(self.fc7(x))
-        x = self.dropout(x)
-        x = torch.relu(self.fc8(x))
-        x = self.dropout(x)
-        x = self.fc9(x)
-        
+        x = F.relu(self.conv2(x))  # Output shape: (batch_size, 256, H'', W'')
+
+        # Conv3
+        x = F.relu(self.conv3(x))  # Output shape: (batch_size, 384, H'', W'')
+
+        # Conv4
+        x = F.relu(self.conv4(x))  # Output shape: (batch_size, 384, H'', W'')
+
+        # Channel reduction: 384 -> 192
+        x = self.reduce_channels(x)  # Output shape: (batch_size, 192, H'', W'')
+
+        # Conv5
+        x = F.relu(self.conv5(x))  # Output shape: (batch_size, 256, H'', W'')
+
+        # Flatten for fully connected layers
+        x = x.view(x.size(0), -1)  # Flatten all dimensions except batch
+
+        # Fully Connected Layers
+        x = F.relu(self.fc6(x))
+        x = self.dropout1(x)
+        x = F.relu(self.fc7(x))
+        x = self.dropout2(x)
+        x = F.relu(self.fc8(x))
+        x = self.dropout3(x)
+        x = self.fc9(x)  # Output 4 parameters for color correction
+
         return x
 
 # Configure logger
