@@ -8,8 +8,7 @@ from PIL import Image
 import typer
 from loguru import logger
 from tqdm import tqdm
-
-from semantic_color_constancy_using_cnn.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
+from . import RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
 
 app = typer.Typer()
 
@@ -18,27 +17,32 @@ logger.add("dataset_processing.log", format="{time} {level} {message}", level="D
 
 
 class ADE20KTrueColorNetDataset(Dataset):
-    def __init__(self, root_dir_img: str, self, root_dir_mask: str, transform=None, train: bool = True):
+    def __init__(self, root_dir_img: Path, root_dir_mask: Path, transform=None, train: bool = True):
         """
         Args:
             root_dir_img: Path to ADE20K dataset/images
-            root_dir_img: Path to ADE20K dataset/annotations
+            root_dir_mask: Path to ADE20K dataset/annotations
             transform: Optional transform to be applied
             train: If True, creates synthetic data for training
         """
-        logger.info(f"Initializing ADE20K dataset from {root_dir}...")
-        self.root_dir = root_dir
+        logger.info(f"Initializing ADE20K dataset from {root_dir_img} and {root_dir_mask}...")
+        self.root_dir_img = root_dir_img
+        self.root_dir_mask = root_dir_mask
         self.transform = transform
         self.train = train
 
         try:
-            self.images_dir = os.path.join(root_dir_img, 'images')
-            self.masks_dir = os.path.join(root_dir_mask, 'annotations')
+            # Set paths for images and masks
+            self.images_dir = root_dir_img / "training" if train else root_dir_img / "validation"
+            self.masks_dir = root_dir_mask / "training" if train else root_dir_mask / "validation"
+
+            # Get list of image files
             self.image_files = sorted(os.listdir(self.images_dir))
-            
+
             if not self.image_files:
                 raise ValueError("No image files found in the dataset directory.")
-            
+
+            # Set number of augmentations per image
             self.augmentations_per_image = 769 if train else 1
             logger.success(f"Dataset initialized successfully with {len(self.image_files)} images.")
         except Exception as e:
@@ -75,18 +79,27 @@ class ADE20KTrueColorNetDataset(Dataset):
         aug_idx = idx % self.augmentations_per_image
 
         img_name = self.image_files[img_idx]
-        img_path = os.path.join(self.images_dir, img_name)
-        mask_path = os.path.join(self.masks_dir, img_name.replace('.jpg', '.png'))
+        img_path = self.images_dir / img_name
+        mask_path = self.masks_dir / img_name.replace('.jpg', '.png')
 
         logger.debug(f"Loading image: {img_path}")
+        logger.debug(f"Loading mask: {mask_path}")
+
+        # Check if mask file exists
+        if not mask_path.exists():
+            raise FileNotFoundError(f"Mask file not found: {mask_path}")
+
+        # Load image and mask
         image = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path)
 
+        # Apply augmentations if training
         if self.train and aug_idx > 0:
             image, params = self.apply_wrong_white_balance(image)
         else:
             params = torch.tensor([1.0, 1.0, 1.0, 1.0])
 
+        # Apply transformations
         if self.transform:
             image = self.transform(image)
             mask = self.transform(mask)
@@ -100,8 +113,8 @@ class ADE20KTrueColorNetDataset(Dataset):
 
 @app.command()
 def main(
-    root_dir_img: Path = typer.Argument(RAW_DATA_DIR_IMG/training, help="Path to the ADE20K dataset root directory."),
-    root_dir_mask: Path = typer.Argument(RAW_DATA_DIR_MASK/training, help="Path to the ADE20K dataset root directory."),
+    root_dir_img: Path = typer.Argument(RAW_DATA_DIR_IMG / "training", help="Path to the ADE20K dataset root directory."),
+    root_dir_mask: Path = typer.Argument(RAW_DATA_DIR_MASK / "training", help="Path to the ADE20K dataset root directory."),
     batch_size: int = typer.Option(32, help="Batch size for data loading."),
 ):
     """CLI tool to process the ADE20K dataset and generate features."""

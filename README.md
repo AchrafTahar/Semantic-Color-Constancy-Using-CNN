@@ -47,7 +47,7 @@ A PyTorch implementation of the research paper 'Semantic White Balance: Semantic
     │
     ├── dataset.py              <- Scripts to download or generate data
     │
-    ├── features.py             <- Code to create features for modeling
+    ├── dataset_processing.py   <- Dataset handling and preprocessing
     │
     ├── modeling                
     │   ├── __init__.py 

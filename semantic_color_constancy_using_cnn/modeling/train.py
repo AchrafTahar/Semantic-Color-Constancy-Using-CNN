@@ -4,12 +4,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.models as models
-from model import TrueColorNet
+import torchvision.transforms as transforms
 import numpy as np
 import typer
 from loguru import logger
 from tqdm import tqdm
-from semantic_color_constancy_using_cnn.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
+from semantic_color_constancy_using_cnn.config import MODELS_DIR, RAW_DATA_DIR_IMG, RAW_DATA_DIR_MASK
+from semantic_color_constancy_using_cnn.dataset_processing import ADE20KTrueColorNetDataset
+from semantic_color_constancy_using_cnn.modeling.model import TrueColorNet
 
 app = typer.Typer()
 
@@ -23,21 +25,46 @@ def initialize_weights(model):
     alexnet_conv1_weights = alexnet.features[0].weight.data
     
     with torch.no_grad():
-        # First 3 dimensions (RGB) from AlexNet
-        model.conv1.weight.data[:, :3, :, :] = alexnet_conv1_weights
-        # Last dimension (mask) with average filter
-        model.conv1.weight.data[:, 3, :, :] = 1.0 / 11.0
+        # First 64 channels from AlexNet
+        model.conv1.weight.data[:64, :3, :, :] = alexnet_conv1_weights[:, :3, :, :]
 
-        # Initialize conv2-5 with pretrained weights
-        model.conv2.weight.data = alexnet.features[3].weight.data
-        model.conv3.weight.data = alexnet.features[6].weight.data
+        # Last channel (mask) initialized with average filter
+        model.conv1.weight.data[:64, 3, :, :] = 1.0 / 11.0
+
+        # Randomly initialize the remaining 32 channels
+        if model.conv1.weight.data.size(0) > 64:
+            nn.init.normal_(model.conv1.weight.data[64:], mean=0.0, std=0.01)
+
+        # Initialize conv2 with pretrained weights from AlexNet (sliced to match 48 input channels)
+        alexnet_conv2_weights = alexnet.features[3].weight.data
+        alexnet_conv2_bias = alexnet.features[3].bias.data
+
+        # Slice the weights to match 48 input channels
+        model.conv2.weight.data[:192, :48, :, :] = alexnet_conv2_weights[:, :48, :, :]
+
+        # Randomly initialize the remaining weights for conv2 (to match 256 output channels)
+        if model.conv2.weight.data.size(0) > 192:
+            nn.init.normal_(model.conv2.weight.data[192:], mean=0.0, std=0.01)
+
+        # Initialize bias for conv2 (to match 256 output channels)
+        model.conv2.bias.data[:192] = alexnet_conv2_bias
+        if model.conv2.bias.data.size(0) > 192:
+            nn.init.constant_(model.conv2.bias.data[192:], 0.0)
+
+        # Initialize conv3 with random weights (to match 256 input channels)
+        nn.init.normal_(model.conv3.weight.data, mean=0.0, std=0.01)
+        nn.init.constant_(model.conv3.bias.data, 0.0)
+        
+
+        # Initialize conv4-5 with pretrained weights from AlexNet
         model.conv4.weight.data = alexnet.features[8].weight.data
         model.conv5.weight.data = alexnet.features[10].weight.data
 
-        # Initialize fc layers with random Gaussian weights
+        # Initialize FC layers (fully connected layers) with random weights
         for layer in [model.fc6, model.fc7, model.fc8, model.fc9]:
             nn.init.normal_(layer.weight.data, mean=0.0, std=0.01)
             nn.init.constant_(layer.bias.data, 0.0)
+            
     logger.success("Weights initialized successfully.")
 
 def pixel_wise_normalization(images):
@@ -118,43 +145,51 @@ def train(train_loader, val_loader, num_epochs=500):
                 'loss': running_loss,
             }, checkpoint_path)
             logger.info(f"Saved checkpoint: {checkpoint_path}")
+    # Return the trained model
+    return model
 
 @app.command()
 def main(
-    features_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    labels_path: Path = PROCESSED_DATA_DIR / "labels.csv",
-    model_path: Path = MODELS_DIR / "model.pkl",
+    model_path: Path = MODELS_DIR,
+    batch_size: int = 32,
 ):
     """Main function to train the model."""
     logger.info("Starting model training...")
     try:
         # Load your data here (not implemented in this snippet)
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
         train_dataset = ADE20KTrueColorNetDataset(
-        root_dir_img='RAW_DATA_DIR_IMG/training',
-        root_dir_mask='RAW_DATA_DIR_MASK/training',
-        transform=transform,
-        train=True
+            root_dir_img=RAW_DATA_DIR_IMG,
+            root_dir_mask=RAW_DATA_DIR_MASK,
+            transform=transform,
+            train=True
         )
         val_dataset = ADE20KTrueColorNetDataset(
-        root_dir_img='RAW_DATA_DIR_IMG/validation',
-        root_dir_mask='RAW_DATA_DIR_MASK/training',
-        transform=transform,
-        train=False
+            root_dir_img=RAW_DATA_DIR_IMG,
+            root_dir_mask=RAW_DATA_DIR_MASK,
+            transform=transform,
+            train=False
         )
         # Create dataloaders
         train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4
+            train_dataset, 
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=4
         )
         val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=4
         )
-        train(train_loader, val_loader)
+        model = train(train_loader, val_loader)
+
+        # Save the model after training
+        torch.save(model.state_dict(), model_path)
         logger.success("Model training completed successfully.")
     except Exception as e:
         logger.exception(f"An error occurred: {e}")
