@@ -4,10 +4,11 @@ import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 from torchvision import transforms
-from model import TrueColorNet
+from .model import TrueColorNet
 import typer
 from loguru import logger
 from tqdm import tqdm
+from typing import Tuple
 
 from semantic_color_constancy_using_cnn.config import MODELS_DIR
 
@@ -81,7 +82,7 @@ class TrueColorNetPredictor:
         array = (array * 255).astype(np.uint8)
         return Image.fromarray(array)
 
-    def predict(self, image_path: Path, mask_path: Path) -> (Image.Image, np.ndarray):
+    def predict(self, image_path: Path, mask_path: Path) -> Tuple[Image.Image, np.ndarray]:
         """Predict and apply white balance correction."""
         logger.info(f"Starting prediction for image: {image_path} and mask: {mask_path}")
         try:

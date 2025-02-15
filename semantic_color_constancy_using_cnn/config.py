@@ -1,10 +1,13 @@
+import torch
 from pathlib import Path
-
 from dotenv import load_dotenv
 from loguru import logger
 
 # Load environment variables from .env file if it exists
 load_dotenv()
+
+# Automatically select GPU if available, otherwise use CPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Paths
 PROJ_ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +18,8 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 RAW_DATA_DIR_IMG = DATA_DIR / "raw"/ "images"
 RAW_DATA_DIR_MASK = DATA_DIR / "raw"/ "annotations"
 INTERIM_DATA_DIR = DATA_DIR / "interim"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
+OUT_DATA_DIR_IMG = DATA_DIR / "processed"/ "images"
+OUT_DATA_DIR_MASK = DATA_DIR / "processed"/ "annotations"
 EXTERNAL_DATA_DIR = DATA_DIR / "external"
 
 MODELS_DIR = PROJ_ROOT / "models"

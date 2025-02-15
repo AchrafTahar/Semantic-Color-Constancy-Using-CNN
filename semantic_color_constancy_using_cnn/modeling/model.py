@@ -1,3 +1,4 @@
+# All the needed importations.
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,60 +8,62 @@ from tqdm import tqdm
 import torch.nn.functional as F
 
 
+# Define The TrueColorNet neural network based on the AlexNet architecture and adapted to recieve 4D volume as input. 
 class TrueColorNet(nn.Module):
     def __init__(self):
         super(TrueColorNet, self).__init__()
 
-        self.pool = nn.MaxPool2d(kernel_size=3, stride=2)
-
-        # Conv1: 96 11x11x4 convolutions with stride [4 4] and padding [0 0]
+        # Conv1: 96 11x11x4 convolutions with stride [4 4] and padding [0 0].
         self.conv1 = nn.Conv2d(in_channels=4, out_channels=96, kernel_size=11, stride=4, padding=0)
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2)
 
-        # Conv2: 256 5x5x48 convolutions
+        # Conv2: 256 5x5x48 convolutions with stride [1 1] and padding [2 2].
         self.conv2 = nn.Conv2d(in_channels=96, out_channels=256, kernel_size=5, padding=2)
+        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=2)
 
-        # Conv3: 384 3x3x256 convolutions
+        # Conv3: 384 3x3x256 convolutions with stride [1 1] and padding [1 1].
         self.conv3 = nn.Conv2d(in_channels=256, out_channels=384, kernel_size=3, padding=1)
 
-        # Conv4: 384 3x3x384 convolutions
+        # Conv4: 384 3x3x384 convolutions with stride [1 1] and padding [1 1].
         self.conv4 = nn.Conv2d(in_channels=384, out_channels=384, kernel_size=3, padding=1)
 
-        # Conv5: 256 3x3x192 convolutions
+        # Conv5: 256 3x3x192 convolutions with stride [1 1] and padding [1 1].
         self.conv5 = nn.Conv2d(in_channels=384, out_channels=256, kernel_size=3, padding=1)
+        self.pool5 = nn.MaxPool2d(kernel_size=3, stride=2)
 
-        # Fully Connected Layers
+        # Fully Connected Layers.
         self.fc6 = nn.Linear(256 * 6 * 6, 4096)
         self.dropout1 = nn.Dropout(0.5)
         self.fc7 = nn.Linear(4096, 2048)
         self.dropout2 = nn.Dropout(0.5)
         self.fc8 = nn.Linear(2048, 1024)
         self.dropout3 = nn.Dropout(0.5)
-        self.fc9 = nn.Linear(1024, 4)  # Output 4 parameters for color correction
+        self.fc9 = nn.Linear(1024, 4)  # Output predicted parameters (r, g, b, gamma) of shape (batch_size, 4) for color correction.
 
     def forward(self, x):
-        # Save the input image for correction (assume first 3 channels are RGB)
-        input_image = x[:, :3, :, :]
+        # Save the input image for applying color correction.
+        input_batch_images = x[:, :3, :, :]
 
         # Conv1
-        x = F.relu(self.conv1(x))  # Output shape: (batch_size, 96, H', W')
-        x = self.pool(x)  # Output shape: (batch_size, 96, H'', W'')
+        x = F.relu(self.conv1(x))  # Output shape: (batch_size, 96, H', W').
+        x = self.pool1(x)  # Output shape: (batch_size, 96, H'', W'').
 
         # Conv2
-        x = F.relu(self.conv2(x))  # Output shape: (batch_size, 256, H'', W'')
-        x = self.pool(x)
+        x = F.relu(self.conv2(x))  # Output shape: (batch_size, 256, H'', W'').
+        x = self.pool2(x)
 
         # Conv3
-        x = F.relu(self.conv3(x))  # Output shape: (batch_size, 384, H'', W'')
+        x = F.relu(self.conv3(x))  # Output shape: (batch_size, 384, H'', W'').
 
         # Conv4
-        x = F.relu(self.conv4(x))  # Output shape: (batch_size, 384, H'', W'')
+        x = F.relu(self.conv4(x))  # Output shape: (batch_size, 384, H'', W'').
 
         # Conv5
-        x = F.relu(self.conv5(x))  # Output shape: (batch_size, 256, H'', W'')
-        x = self.pool(x)
+        x = F.relu(self.conv5(x))  # Output shape: (batch_size, 256, H'', W'').
+        x = self.pool5(x)
 
         # Flatten for fully connected layers
-        x = x.view(x.size(0), -1)  # Flatten all dimensions except batch
+        x = x.view(x.size(0), -1)  # Flatten all dimensions except batch.
 
         # Fully Connected Layers
         x = F.relu(self.fc6(x))
@@ -69,48 +72,48 @@ class TrueColorNet(nn.Module):
         x = self.dropout2(x)
         x = F.relu(self.fc8(x))
         x = self.dropout3(x)
-        params = self.fc9(x)  # Output 4 parameters for color correction
+        params = self.fc9(x)  # Output predicted parameters (r, g, b, gamma) of shape (batch_size, 4) for color correction.
 
-        # Apply color correction to the input image
-        corrected_image = self.color_correction(input_image, params)
+        # Apply color correction to the input batch_images
+        corrected_image = self.color_correction(input_batch_images, params)
 
         return corrected_image
 
-    def color_correction(self, image, params):
+    def color_correction(self, batch_images, params):
         """
-        Applies color correction and gamma correction to the input image using the predicted four values.
+        Applies color correction and gamma correction to the input batch_images using the predicted 4 parameters.
 
         Args:
-            image (torch.Tensor): Input image tensor of shape (batch_size, 3, H, W).
-            params (torch.Tensor): Predicted parameters (r, g, b, γ) of shape (batch_size, 4).
+            batch_images (torch.Tensor): Input batch_images tensor of shape (batch_size, 3, H, W).
+            params (torch.Tensor): Predicted parameters (r, g, b, gamma) of shape (batch_size, 4).
 
         Returns:
-            torch.Tensor: Corrected image tensor of shape (batch_size, 3, H, W).
+            torch.Tensor: Corrected batch_images tensor of shape (batch_size, 3, H, W).
         """
-        batch_size, _, H, W = image.shape
+        batch_size, _, H, W = batch_images.shape
 
         # Extract parameters
         r, g, b, gamma = params[:, 0], params[:, 1], params[:, 2], params[:, 3]
 
         # Create the diagonal matrix M
-        M = torch.zeros(batch_size, 3, 3, device=image.device)
+        M = torch.zeros(batch_size, 3, 3, device=batch_images.device)
         M[:, 0, 0] = 1.0 / r  # 1/r
         M[:, 1, 1] = 1.0 / g  # 1/g
         M[:, 2, 2] = 1.0 / b  # 1/b
 
-        # Reshape image for matrix multiplication: (batch_size, 3, H*W)
-        image_reshaped = image.view(batch_size, 3, -1)
+        # Reshape batch_images for matrix multiplication: (batch_size, 3, H*W)
+        batch_images_reshaped = batch_images.view(batch_size, 3, -1)
 
         # Apply color correction: I_corrected = M * I
-        corrected_image = torch.bmm(M, image_reshaped)  # (batch_size, 3, H*W)
+        corrected_batch_images = torch.bmm(M, batch_images_reshaped)  # (batch_size, 3, H*W)
 
         # Reshape back to (batch_size, 3, H, W)
-        corrected_image = corrected_image.view(batch_size, 3, H, W)
+        corrected_batch_images = corrected_batch_images.view(batch_size, 3, H, W)
 
         # Apply gamma correction: I_final = I_corrected^gamma
-        corrected_image = torch.pow(corrected_image, gamma.view(-1, 1, 1, 1))
+        corrected_batch_images = torch.pow(corrected_batch_images, gamma.view(-1, 1, 1, 1))
 
-        return corrected_image
+        return corrected_batch_images
 
 
 # Configure logger

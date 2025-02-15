@@ -65,6 +65,10 @@ docs:
 data: requirements
 	$(PYTHON_INTERPRETER) semantic_color_constancy_using_cnn/dataset.py
 
+## Make Dataset processing
+.PHONY: data_processing
+data_processing:
+	$(PYTHON_INTERPRETER) semantic_color_constancy_using_cnn/dataset_processing.py
 
 #################################################################################
 # Self Documenting Commands                                                     #
