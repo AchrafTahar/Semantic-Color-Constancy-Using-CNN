@@ -1,3 +1,12 @@
 {
-    "makefile.configureOnOpen": true
+    "makefile.configureOnOpen": true,
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./semantic_color_constancy_using_cnn",
+        "-p",
+        "*test.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
 }

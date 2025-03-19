@@ -17,10 +17,7 @@ DATA_DIR = PROJ_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 RAW_DATA_DIR_IMG = DATA_DIR / "raw"/ "images"
 RAW_DATA_DIR_MASK = DATA_DIR / "raw"/ "annotations"
-INTERIM_DATA_DIR = DATA_DIR / "interim"
 OUT_DATA_DIR_IMG = DATA_DIR / "processed"/ "images"
-OUT_DATA_DIR_MASK = DATA_DIR / "processed"/ "annotations"
-EXTERNAL_DATA_DIR = DATA_DIR / "external"
 
 MODELS_DIR = PROJ_ROOT / "models"
 
